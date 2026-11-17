@@ -63,7 +63,7 @@ exec ./sc-time-manager
 
 Не забудьте `chmod +x sc-time-manager.command`.
 
-Буфер обмена читается через `pbpaste`; готовый `.xlsx` открывается через `open`, если включён `open_after_export`. В `output_dir` используйте абсолютный путь или `~/...`: синтаксис `%USERPROFILE%` — только для Windows.
+Буфер обмена читается через `pbpaste`; готовый `.xlsx` открывается через `open`, если `after_export` = `open`. В `output_dir` используйте абсолютный путь или `~/...`: синтаксис `%USERPROFILE%` — только для Windows.
 
 ## Gatekeeper
 

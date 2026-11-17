@@ -12,7 +12,7 @@
 | `export.output_dir` | `""` | папка выгрузки; пусто — рядом с exe |
 | `export.totals_enabled` | `true` | итоговая строка |
 | `export.totals_label` | `"Итого"` | подпись итога |
-| `export.open_after_export` | `false` | открыть файл после сохранения |
+| `export.after_export` | `"nothing"` | после сохранения: `nothing`, `open` или `copy` |
 | `export.font_name` | `"Nunito"` | шрифт ячеек |
 | `export.font_size` | `10` | размер шрифта |
 | `export.text_color` | `"#000000"` | цвет текста |
@@ -21,6 +21,8 @@
 | `export.header_bold` | `true` | жирная шапка |
 | `export.header_background_color` | `"#DDDDDD"` | фон шапки |
 | `export.row_height` | `50` | высота строки в пунктах |
+
+`after_export` задаёт действие после закрытия дня: `nothing` — только сохранить, `open` — открыть файл, `copy` — скопировать список задач в буфер. То же самое выбирается на экране «Конец дня». Старое поле `open_after_export` читается как `open`.
 
 `output_dir` понимает `%USERPROFILE%` и начальный `~`; относительный путь считается от текущей рабочей папки. Двоеточия и другие запрещённые символы в имени файла заменяются на дефисы.
 

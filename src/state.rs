@@ -62,6 +62,20 @@ impl DailyState {
         self.current_task.is_some() || self.has_finished_tasks()
     }
 
+    /// Список задач дня для буфера обмена: имена с комментариями, по пункту на строку.
+    pub fn task_list_text(&self) -> String {
+        self.completed_tasks
+            .lock()
+            .map(|tasks| {
+                tasks
+                    .iter()
+                    .map(|task| format!("- {}", task.name))
+                    .collect::<Vec<_>>()
+                    .join("\n")
+            })
+            .unwrap_or_default()
+    }
+
     /// Завершает открытую задачу указанным временем, не теряя сделанное.
     pub fn close_current_task_at(&mut self, dt_end: DateTime<Local>) -> Result<(), String> {
         let Some(task) = self.current_task.take() else {
@@ -463,6 +477,18 @@ mod day_tests {
 
         assert!(state_at(yesterday, None, vec![]).is_from_previous_day(today));
         assert!(!state_at(Local::now(), None, vec![]).is_from_previous_day(today));
+    }
+
+    #[test]
+    fn task_list_text_keeps_comments_and_format() {
+        let start = Local::now();
+        let mut state = state_at(start, Some(open_task("Write report", start)), vec![]);
+
+        state
+            .complete_current_task(Some("sent to the team".to_string()))
+            .unwrap();
+
+        assert_eq!(state.task_list_text(), "- Write report. sent to the team");
     }
 
     #[test]

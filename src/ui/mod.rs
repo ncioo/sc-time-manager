@@ -18,14 +18,14 @@ pub const MIN_WIDTH: u16 = 80;
 pub const MIN_HEIGHT: u16 = 24;
 
 use crate::{
-    config::parse_color,
+    config::{parse_color, AfterExport},
     i18n::{self, t},
     theme::{self, contrast_text, theme, ThemePreset, ThemeSource},
     utils::centered_rect,
 };
 use tabs::Tab;
 
-pub use control::{Control, Input};
+pub use control::{AfterExportChoice, Control, Input};
 
 use self::control::SubmitButton;
 
@@ -46,6 +46,7 @@ pub fn stage_label(stage: &AppStage) -> &'static str {
 
 pub struct AppUiState {
     submit_btn: Arc<Mutex<Control>>,
+    after_export: Arc<Mutex<Control>>,
     active_tab: usize,
     pub control_focused: Option<Arc<Mutex<Control>>>,
     pub task_name_input: Arc<Mutex<Control>>,
@@ -72,6 +73,9 @@ impl AppUiState {
             task_end_comment_input: Arc::new(Mutex::new(Control::EndCommentInput(Input::init()))),
             task_name_input: Arc::new(Mutex::new(Control::TaskNameInput(Input::init()))),
             submit_btn: Arc::new(Mutex::new(Control::SubmitBtn(SubmitButton::init()))),
+            after_export: Arc::new(Mutex::new(Control::AfterExport(AfterExportChoice::init(
+                AfterExport::Nothing,
+            )))),
             active_tab: 0_usize,
             control_focused: None,
             stage: AppStage::Waiting,
@@ -100,6 +104,44 @@ impl AppUiState {
     pub fn select_theme(&mut self, index: usize) {
         if index < self.themes.len() {
             self.theme_selected = index;
+        }
+    }
+
+    /// Режим «что сделать после закрытия дня», сохранённый в config.json.
+    pub fn after_export_mode(&self) -> AfterExport {
+        match &*self.after_export.lock().unwrap() {
+            Control::AfterExport(choice) => choice.mode,
+            _ => AfterExport::Nothing,
+        }
+    }
+
+    pub fn set_after_export_mode(&mut self, mode: AfterExport) {
+        if let Control::AfterExport(choice) = &mut *self.after_export.lock().unwrap() {
+            choice.mode = mode;
+        }
+    }
+
+    /// Переключает режим по кругу и возвращает новый.
+    pub fn cycle_after_export(&mut self, delta: isize) -> AfterExport {
+        let mut control = self.after_export.lock().unwrap();
+
+        if let Control::AfterExport(choice) = &mut *control {
+            if delta >= 0 {
+                choice.next();
+            } else {
+                choice.previous();
+            }
+
+            choice.mode
+        } else {
+            AfterExport::Nothing
+        }
+    }
+
+    pub fn is_after_export_focused(&self) -> bool {
+        match &self.control_focused {
+            Some(control) => matches!(&*control.lock().unwrap(), Control::AfterExport(_)),
+            None => false,
         }
     }
 
@@ -137,6 +179,7 @@ impl AppUiState {
         self.task_name_input.lock().unwrap().unset_focus();
         self.task_end_comment_input.lock().unwrap().unset_focus();
         self.submit_btn.lock().unwrap().unset_focus();
+        self.after_export.lock().unwrap().unset_focus();
 
         match self.get_active_tab() {
             Tab::Start => {
@@ -200,10 +243,40 @@ impl AppUiState {
                             state.unset_focus();
                             self.task_name_input.lock().unwrap().set_focus();
                         }
+                        _ => {}
                     }
                 }
             }
-            Tab::End | Tab::Out => {
+            Tab::End => {
+                let input_focused_cell_option = self.control_focused.take();
+
+                if let Some(input_focused_cell) = input_focused_cell_option {
+                    let mut input_focused = input_focused_cell.lock().unwrap();
+
+                    match &mut *input_focused {
+                        Control::EndCommentInput(state) => {
+                            self.control_focused = Some(Arc::clone(&self.after_export));
+
+                            state.unset_focus();
+                            self.after_export.lock().unwrap().set_focus();
+                        }
+                        Control::AfterExport(state) => {
+                            self.control_focused = Some(Arc::clone(&self.submit_btn));
+
+                            state.unset_focus();
+                            self.submit_btn.lock().unwrap().set_focus();
+                        }
+                        Control::SubmitBtn(state) => {
+                            self.control_focused = Some(Arc::clone(&self.task_end_comment_input));
+
+                            state.unset_focus();
+                            self.task_end_comment_input.lock().unwrap().set_focus();
+                        }
+                        _ => {}
+                    }
+                }
+            }
+            Tab::Out => {
                 let input_focused_cell_option = self.control_focused.take();
 
                 if let Some(input_focused_cell) = input_focused_cell_option {
@@ -259,10 +332,40 @@ impl AppUiState {
                             state.unset_focus();
                             self.task_end_comment_input.lock().unwrap().set_focus();
                         }
+                        _ => {}
                     }
                 }
             }
-            Tab::End | Tab::Out => {
+            Tab::End => {
+                let input_focused_cell_option = self.control_focused.take();
+
+                if let Some(input_focused_cell) = input_focused_cell_option {
+                    let mut input_focused = input_focused_cell.lock().unwrap();
+
+                    match &mut *input_focused {
+                        Control::EndCommentInput(state) => {
+                            self.control_focused = Some(Arc::clone(&self.submit_btn));
+
+                            state.unset_focus();
+                            self.submit_btn.lock().unwrap().set_focus();
+                        }
+                        Control::AfterExport(state) => {
+                            self.control_focused = Some(Arc::clone(&self.task_end_comment_input));
+
+                            state.unset_focus();
+                            self.task_end_comment_input.lock().unwrap().set_focus();
+                        }
+                        Control::SubmitBtn(state) => {
+                            self.control_focused = Some(Arc::clone(&self.after_export));
+
+                            state.unset_focus();
+                            self.after_export.lock().unwrap().set_focus();
+                        }
+                        _ => {}
+                    }
+                }
+            }
+            Tab::Out => {
                 let input_focused_cell_option = self.control_focused.take();
 
                 if let Some(input_focused_cell) = input_focused_cell_option {
@@ -293,6 +396,7 @@ impl AppUiState {
         self.task_name_input.lock().unwrap().clear_input();
         self.task_end_comment_input.lock().unwrap().clear_input();
         self.submit_btn.lock().unwrap().unset_focus();
+        self.after_export.lock().unwrap().unset_focus();
         self.history_selection = None;
     }
 
@@ -477,54 +581,87 @@ impl AppUiState {
     }
 
     pub fn render_end_tab(&self, frame: &mut Frame, area: Rect, view: &EndOfDayView) {
-        let inner_area = centered_rect(area, 90, 70);
+        let inner_area = centered_rect(area, 90, 90);
+
+        // Фиксированная высота блока: поле комментария компактное, а весь
+        // блок центрируется по вертикали, если окно выше.
+        let content_height = 16;
+        let top = inner_area.height.saturating_sub(content_height) / 2;
+        let content_area = Rect::new(
+            inner_area.x,
+            inner_area.y + top,
+            inner_area.width,
+            content_height.min(inner_area.height),
+        );
 
         let rows = Layout::default()
             .direction(Direction::Vertical)
             .constraints(vec![
-                Constraint::Length(6),
-                Constraint::Min(5),
+                Constraint::Length(7),
+                Constraint::Length(3),
+                Constraint::Length(1),
+                Constraint::Length(1),
+                Constraint::Length(1),
                 Constraint::Length(3),
             ])
-            .split(inner_area);
+            .split(content_area);
+
+        let accent = Style::new().fg(theme().accent);
+        let text = Style::new().fg(theme().text);
+        let file_label = format!("{}: ", t("File", "Файл"));
+        let file_path = truncate(
+            view.file_path,
+            content_area
+                .width
+                .saturating_sub(file_label.chars().count() as u16) as usize,
+        );
 
         let mut lines = vec![
             Line::from(Span::styled(
                 t("Close the day?", "Закрыть день?"),
-                Style::new().fg(theme().accent).bold(),
+                text.bold(),
             )),
             Line::from(""),
-            Line::from(Span::styled(
-                format!(
-                    "{}: {} · {}",
-                    t("Tasks", "Задач"),
-                    view.tasks,
-                    crate::i18n::duration_text(view.seconds)
+            Line::from(vec![
+                Span::styled(format!("{}: ", t("Tasks", "Задач")), text),
+                Span::styled(
+                    format!(
+                        "{} · {}",
+                        view.tasks,
+                        crate::i18n::duration_text(view.seconds)
+                    ),
+                    accent,
                 ),
-                Style::new().fg(theme().text),
-            )),
+            ]),
         ];
 
         if let Some(running_task) = view.running_task {
-            lines.push(Line::from(Span::styled(
-                format!(
-                    "{}: {running_task} · {}",
-                    t(
-                        "Current task closes with the day",
-                        "Текущая задача закроется вместе с днём"
+            lines.push(Line::from(""));
+            lines.push(Line::from(vec![
+                Span::styled(
+                    format!(
+                        "{}: ",
+                        t(
+                            "Current task closes with the day",
+                            "Текущая задача закроется вместе с днём"
+                        )
                     ),
-                    crate::i18n::duration_text(view.running_seconds)
+                    text,
                 ),
-                Style::new().fg(theme().text),
-            )));
+                Span::styled(
+                    format!(
+                        "{running_task} · {}",
+                        crate::i18n::duration_text(view.running_seconds)
+                    ),
+                    accent,
+                ),
+            ]));
         }
 
+        lines.push(Line::from(""));
         lines.push(Line::from(vec![
-            Span::styled(
-                format!("{}: ", t("File", "Файл")),
-                Style::new().fg(theme().muted),
-            ),
-            Span::styled(view.file_path.to_owned(), Style::new().fg(theme().text)),
+            Span::styled(file_label, Style::new().fg(theme().muted)),
+            Span::styled(file_path, text),
         ]));
 
         frame.render_widget(
@@ -538,10 +675,14 @@ impl AppUiState {
             .lock()
             .unwrap()
             .render(frame, rows[1], Tab::End);
+        self.after_export
+            .lock()
+            .unwrap()
+            .render(frame, rows[3], Tab::End);
         self.submit_btn
             .lock()
             .unwrap()
-            .render(frame, rows[2], Tab::End);
+            .render(frame, rows[5], Tab::End);
     }
 
     pub fn render_clear_tab(&self, frame: &mut Frame, area: Rect, tasks: usize, seconds: i64) {
@@ -1576,6 +1717,47 @@ mod end_tab_tests {
         assert!(screen.contains("Починить сборку"));
         assert!(screen.contains("D:\\work\\13.11.2026.xlsx"));
     }
+
+    #[test]
+    fn end_tab_offers_after_export_choice() {
+        let mut state = AppUiState::init(None, builtin_presets(), 0);
+        state.open_tab(Tab::End);
+        state.switch_control_focus_forwards();
+
+        assert!(state.is_after_export_focused());
+        assert_eq!(state.after_export_mode(), AfterExport::Nothing);
+        assert_eq!(state.cycle_after_export(1), AfterExport::OpenFile);
+        assert_eq!(state.cycle_after_export(1), AfterExport::CopyList);
+        assert_eq!(state.cycle_after_export(1), AfterExport::Nothing);
+
+        let view = EndOfDayView {
+            tasks: 1,
+            seconds: 600,
+            file_path: "day.xlsx",
+            running_task: None,
+            running_seconds: 0,
+        };
+
+        let mut terminal = Terminal::new(TestBackend::new(120, 30)).unwrap();
+        terminal
+            .draw(|frame| state.render_end_tab(frame, frame.size(), &view))
+            .unwrap();
+
+        let buffer = terminal.backend().buffer();
+        let screen = (0..buffer.area.height)
+            .map(|y| {
+                (0..buffer.area.width)
+                    .map(|x| buffer.get(x, y).symbol().to_string())
+                    .collect::<String>()
+            })
+            .collect::<Vec<String>>()
+            .join("\n");
+
+        assert!(screen.contains("After closing"));
+        assert!(screen.contains("nothing"));
+        assert!(screen.contains("open .xlsx"));
+        assert!(screen.contains("copy list"));
+    }
 }
 #[cfg(test)]
 mod rollover_tests {
@@ -1764,6 +1946,8 @@ mod small_window_tests {
         });
         assert!(end.contains("Close the day?"));
         assert!(end.contains("Tasks: 4"));
+        assert!(end.contains("After closing"));
+        assert!(end.contains("Close day"));
 
         let theme = render(&state, |state, frame| {
             state.render_theme_tab(frame, frame.size())
