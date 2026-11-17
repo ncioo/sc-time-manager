@@ -1,3 +1,4 @@
+pub mod after_export;
 pub mod input;
 pub mod submit_btn;
 
@@ -7,10 +8,11 @@ use ratatui::{layout::Rect, Frame};
 
 use crate::{i18n::t, ui::tabs::Tab};
 
-pub use self::{input::Input, submit_btn::SubmitButton};
+pub use self::{after_export::AfterExportChoice, input::Input, submit_btn::SubmitButton};
 
 #[derive(Clone, PartialEq)]
 pub enum Control {
+    AfterExport(AfterExportChoice),
     EndCommentInput(Input),
     TaskNameInput(Input),
     SubmitBtn(SubmitButton),
@@ -19,6 +21,7 @@ pub enum Control {
 impl Display for Control {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
+            Control::AfterExport(_) => write!(f, "After export"),
             Control::TaskNameInput(_) => write!(f, "Task name"),
             Control::EndCommentInput(_) => write!(f, "Task end comment"),
             Control::SubmitBtn(_) => write!(f, "Submit btn"),
@@ -29,6 +32,7 @@ impl Display for Control {
 impl Control {
     pub fn render(&mut self, frame: &mut Frame, area: Rect, tab: Tab) {
         match self {
+            Control::AfterExport(state) => AfterExportChoice::render(state, frame, area),
             Control::TaskNameInput(state) => Input::render(
                 t("New task description", "Новая задача"),
                 state,
@@ -72,6 +76,7 @@ impl Control {
         match self {
             Control::TaskNameInput(state) => state.clear_input(),
             Control::EndCommentInput(state) => state.clear_input(),
+            Control::AfterExport(_) => {}
             Control::SubmitBtn(_) => {}
         }
     }
@@ -80,6 +85,7 @@ impl Control {
         match self {
             Control::TaskNameInput(state) => state.insert_char(char),
             Control::EndCommentInput(state) => state.insert_char(char),
+            Control::AfterExport(_) => {}
             Control::SubmitBtn(_) => {}
         }
     }
@@ -88,6 +94,7 @@ impl Control {
         match self {
             Control::TaskNameInput(state) => state.insert_text(text),
             Control::EndCommentInput(state) => state.insert_text(text),
+            Control::AfterExport(_) => {}
             Control::SubmitBtn(_) => {}
         }
     }
@@ -96,6 +103,7 @@ impl Control {
         match self {
             Control::TaskNameInput(state) => state.backspace(),
             Control::EndCommentInput(state) => state.backspace(),
+            Control::AfterExport(_) => {}
             Control::SubmitBtn(_) => {}
         }
     }
@@ -104,6 +112,7 @@ impl Control {
         match self {
             Control::TaskNameInput(state) => state.delete_forward(),
             Control::EndCommentInput(state) => state.delete_forward(),
+            Control::AfterExport(_) => {}
             Control::SubmitBtn(_) => {}
         }
     }
@@ -112,6 +121,7 @@ impl Control {
         match self {
             Control::TaskNameInput(state) => state.delete_word_backward(),
             Control::EndCommentInput(state) => state.delete_word_backward(),
+            Control::AfterExport(_) => {}
             Control::SubmitBtn(_) => {}
         }
     }
@@ -128,6 +138,7 @@ impl Control {
         match self {
             Control::TaskNameInput(state) => state.move_cursor_left(),
             Control::EndCommentInput(state) => state.move_cursor_left(),
+            Control::AfterExport(_) => {}
             Control::SubmitBtn(_) => {}
         }
     }
@@ -136,6 +147,7 @@ impl Control {
         match self {
             Control::TaskNameInput(state) => state.move_cursor_right(),
             Control::EndCommentInput(state) => state.move_cursor_right(),
+            Control::AfterExport(_) => {}
             Control::SubmitBtn(_) => {}
         }
     }
@@ -144,6 +156,7 @@ impl Control {
         match self {
             Control::TaskNameInput(state) => state.move_cursor_home(),
             Control::EndCommentInput(state) => state.move_cursor_home(),
+            Control::AfterExport(_) => {}
             Control::SubmitBtn(_) => {}
         }
     }
@@ -152,6 +165,7 @@ impl Control {
         match self {
             Control::TaskNameInput(state) => state.move_cursor_end(),
             Control::EndCommentInput(state) => state.move_cursor_end(),
+            Control::AfterExport(_) => {}
             Control::SubmitBtn(_) => {}
         }
     }
@@ -160,6 +174,7 @@ impl Control {
         match self {
             Control::TaskNameInput(state) => state.set_focus(),
             Control::EndCommentInput(state) => state.set_focus(),
+            Control::AfterExport(state) => state.set_focus(),
             Control::SubmitBtn(state) => state.set_focus(),
         }
     }
@@ -168,6 +183,7 @@ impl Control {
         match self {
             Control::TaskNameInput(state) => state.unset_focus(),
             Control::EndCommentInput(state) => state.unset_focus(),
+            Control::AfterExport(state) => state.unset_focus(),
             Control::SubmitBtn(state) => state.unset_focus(),
         }
     }

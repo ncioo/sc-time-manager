@@ -60,7 +60,7 @@ pub fn write_workbook(
         .save(&file_path)
         .map_err(|error| error.to_string())?;
 
-    if config.export.open_after_export {
+    if config.export.after_export == crate::config::AfterExport::OpenFile {
         let _ = crate::utils::open_in_default_app(&file_path);
     }
 

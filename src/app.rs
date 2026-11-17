@@ -18,7 +18,8 @@ use anyhow::Result;
 use std::path::PathBuf;
 
 use crate::{
-    config::Config,
+    clipboard,
+    config::{AfterExport, Config},
     i18n,
     state::{self, DailyState},
     tagging,
@@ -224,6 +225,7 @@ impl App {
 
         let mut ui_state = AppUiState::init(warning, loaded_themes.presets, theme_selected);
         ui_state.theme_sources = theme_sources;
+        ui_state.set_after_export_mode(loaded_config.config.export.after_export);
 
         App {
             ui_state,
@@ -296,10 +298,18 @@ impl App {
                         }
                         KeyCode::Enter => self.submit(),
                         KeyCode::Left => {
-                            self.with_focused_input(|control| control.move_cursor_left())
+                            if self.ui_state.is_after_export_focused() {
+                                self.cycle_after_export(-1);
+                            } else {
+                                self.with_focused_input(|control| control.move_cursor_left())
+                            }
                         }
                         KeyCode::Right => {
-                            self.with_focused_input(|control| control.move_cursor_right())
+                            if self.ui_state.is_after_export_focused() {
+                                self.cycle_after_export(1);
+                            } else {
+                                self.with_focused_input(|control| control.move_cursor_right())
+                            }
                         }
                         KeyCode::Home => {
                             self.with_focused_input(|control| control.move_cursor_home())
@@ -400,6 +410,22 @@ impl App {
         let next = i18n::lang().next();
         i18n::set_lang(next);
         self.config.language = next.code().to_string();
+
+        if let Err(error) = self.config.save(&self.config_path) {
+            self.set_status(
+                format!(
+                    "{}: {error}",
+                    i18n::t("Could not save settings", "Не удалось сохранить настройки")
+                ),
+                true,
+            );
+        }
+    }
+
+    /// Выбор действия после закрытия дня: применяется сразу и запоминается.
+    fn cycle_after_export(&mut self, delta: isize) {
+        let mode = self.ui_state.cycle_after_export(delta);
+        self.config.export.after_export = mode;
 
         if let Err(error) = self.config.save(&self.config_path) {
             self.set_status(
@@ -1069,6 +1095,11 @@ impl App {
         // Сохраняем день до выгрузки: если xlsx не получится, данные не пропадут.
         state.save(state_file_path)?;
 
+        let copy_list = match self.config.export.after_export {
+            AfterExport::CopyList => Some(state.task_list_text()),
+            _ => None,
+        };
+
         match state.save_state_as_xlsx(&self.prediction_model_session, &self.config) {
             Ok(file_path) => {
                 // Файл уже сохранён, поэтому день можно начинать заново;
@@ -1083,7 +1114,24 @@ impl App {
                     ));
                 }
 
-                Ok(format!("{}: {file_path}", i18n::t("Saved", "Сохранено")))
+                let mut message = format!("{}: {file_path}", i18n::t("Saved", "Сохранено"));
+
+                if let Some(list) = copy_list {
+                    match clipboard::write_clipboard(&list) {
+                        Ok(()) => message.push_str(&format!(
+                            " · {}",
+                            i18n::t("task list copied", "список задач скопирован")
+                        )),
+                        Err(error) => {
+                            return Err(format!(
+                                "{message}. {}: {error}",
+                                i18n::t("Could not copy the list", "Не удалось скопировать список")
+                            ));
+                        }
+                    }
+                }
+
+                Ok(message)
             }
             Err(error) => Err(format!(
                 "{}: {error}. {}",

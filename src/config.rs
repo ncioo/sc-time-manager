@@ -2,7 +2,7 @@ use std::fs;
 use std::path::Path;
 
 use ratatui::style::Color as TuiColor;
-use serde::{Deserialize, Serialize};
+use serde::{Deserialize, Deserializer, Serialize};
 
 /// Срезает BOM, который появляется, если файл сохранили в Блокноте или
 /// PowerShell 5.1: иначе JSON считается битым и данные теряются.
@@ -115,6 +115,37 @@ impl Config {
 pub struct ThemeConfig {
     pub preset: String,
 }
+/// Что сделать после сохранения xlsx.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Serialize, Deserialize)]
+pub enum AfterExport {
+    #[default]
+    #[serde(rename = "nothing")]
+    Nothing,
+    #[serde(rename = "open")]
+    OpenFile,
+    #[serde(rename = "copy")]
+    CopyList,
+}
+
+/// Принимает и новое строковое значение, и старый флаг `open_after_export`.
+fn deserialize_after_export<'de, D>(deserializer: D) -> Result<AfterExport, D::Error>
+where
+    D: Deserializer<'de>,
+{
+    #[derive(Deserialize)]
+    #[serde(untagged)]
+    enum Raw {
+        Bool(bool),
+        Mode(AfterExport),
+    }
+
+    Ok(match Raw::deserialize(deserializer)? {
+        Raw::Bool(true) => AfterExport::OpenFile,
+        Raw::Bool(false) => AfterExport::Nothing,
+        Raw::Mode(mode) => mode,
+    })
+}
+
 /// Описание выходной xlsx-таблицы: шрифт, цвета, высота строк, набор колонок.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(default)]
@@ -127,8 +158,14 @@ pub struct ExportConfig {
     /// Строка с итогом по времени.
     pub totals_enabled: bool,
     pub totals_label: String,
-    /// Открыть готовый файл в программе по умолчанию.
-    pub open_after_export: bool,
+    /// Действие после сохранения xlsx. Старое поле `open_after_export`
+    /// читается как `"open"`.
+    #[serde(
+        default,
+        alias = "open_after_export",
+        deserialize_with = "deserialize_after_export"
+    )]
+    pub after_export: AfterExport,
     pub font_name: String,
     pub font_size: f64,
     pub text_color: String,
@@ -147,7 +184,7 @@ impl Default for ExportConfig {
             output_dir: String::new(),
             totals_enabled: true,
             totals_label: "Итого".to_string(),
-            open_after_export: false,
+            after_export: AfterExport::Nothing,
             font_name: "Nunito".to_string(),
             font_size: 10.0,
             text_color: "#000000".to_string(),
@@ -413,6 +450,32 @@ mod tests {
         assert_eq!(parsed.export.columns.len(), 7);
         assert_eq!(parsed.export.columns[0].kind, ColumnKind::Date);
         assert_eq!(parsed.export.columns[6].kind, ColumnKind::Hours);
+    }
+
+    #[test]
+    fn after_export_reads_legacy_open_flag() {
+        let enabled: Config =
+            serde_json::from_str(r##"{"export":{"open_after_export":true}}"##).unwrap();
+        let disabled: Config =
+            serde_json::from_str(r##"{"export":{"open_after_export":false}}"##).unwrap();
+
+        assert_eq!(enabled.export.after_export, AfterExport::OpenFile);
+        assert_eq!(disabled.export.after_export, AfterExport::Nothing);
+    }
+
+    #[test]
+    fn after_export_round_trips_and_has_no_legacy_field() {
+        let mut config = Config::default();
+        config.export.after_export = AfterExport::CopyList;
+
+        let text = serde_json::to_string(&config).unwrap();
+
+        assert!(text.contains(r##""after_export":"copy""##));
+        assert!(!text.contains("open_after_export"));
+
+        let parsed: Config = serde_json::from_str(&text).unwrap();
+
+        assert_eq!(parsed.export.after_export, AfterExport::CopyList);
     }
 
     #[test]
