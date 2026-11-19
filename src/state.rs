@@ -108,7 +108,7 @@ impl DailyState {
     }
 
     pub fn save(&self, file_path: &PathBuf) -> Result<String, String> {
-        let json = serde_json::to_string(self).map_err(|error| {
+        let mut json = serde_json::to_string_pretty(self).map_err(|error| {
             format!(
                 "{}: {error}",
                 t(
@@ -117,6 +117,7 @@ impl DailyState {
                 )
             )
         })?;
+        json.push('\n');
 
         write_file_atomically(file_path, &json)?;
 
@@ -608,6 +609,20 @@ mod reliability_tests {
         let _ = std::fs::create_dir_all(&directory);
 
         directory
+    }
+
+    #[test]
+    fn saves_state_pretty_printed() {
+        let directory = test_directory("pretty");
+        let path = directory.join("state.json");
+        let _ = std::fs::remove_file(&path);
+
+        DailyState::fresh().save(&path).unwrap();
+
+        let text = std::fs::read_to_string(&path).unwrap();
+
+        assert!(text.starts_with("{\n  \"current_task\""));
+        assert!(text.ends_with('\n'));
     }
 
     #[test]
