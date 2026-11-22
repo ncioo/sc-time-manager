@@ -947,11 +947,12 @@ impl AppUiState {
                 ("ac", &preset.colors.accent),
                 ("tx", &preset.colors.text),
             ] {
-                let color = parse_color(value, Color::Reset);
+                let raw_color = parse_color(value, Color::Reset);
+                let color = theme::fit_terminal_color(raw_color);
 
                 spans.push(Span::styled(
                     format!(" {label} "),
-                    Style::new().fg(contrast_text(color)).bg(color),
+                    Style::new().fg(contrast_text(raw_color)).bg(color),
                 ));
                 spans.push(Span::raw(" "));
             }

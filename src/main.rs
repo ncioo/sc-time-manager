@@ -74,6 +74,7 @@ fn enable_terminal_colors() {
     // Интерфейс построен на теме, поэтому цвета нужны всегда: иначе переменная
     // NO_COLOR в окружении делает окно белым на чёрном и темы теряют смысл.
     crossterm::style::force_color_output(true);
+    time_manager::theme::set_truecolor(true);
 
     if std::env::var_os("TERM").is_none() {
         std::env::set_var("TERM", "xterm-256color");
@@ -97,8 +98,56 @@ fn enable_terminal_colors() {
 #[cfg(not(windows))]
 fn enable_terminal_colors() {
     crossterm::style::force_color_output(true);
+    time_manager::theme::set_truecolor(detect_truecolor());
 
     if std::env::var_os("TERM").is_none() {
         std::env::set_var("TERM", "xterm-256color");
     }
+}
+
+/// Terminal.app на macOS понимает 256 цветов, но не 24-битный RGB: на
+/// последовательностях `38;2;r;g;b` он показывает мусорные атрибуты.
+/// truecolor включаем только там, где терминал его заявляет.
+#[cfg(not(windows))]
+fn detect_truecolor() -> bool {
+    if let Ok(value) = std::env::var("TIME_MANAGER_TRUECOLOR") {
+        let value = value.to_lowercase();
+
+        if matches!(value.as_str(), "0" | "false" | "no") {
+            return false;
+        }
+
+        if matches!(value.as_str(), "1" | "true" | "yes") {
+            return true;
+        }
+    }
+
+    if let Ok(value) = std::env::var("COLORTERM") {
+        let value = value.to_lowercase();
+
+        if value.contains("truecolor") || value.contains("24bit") {
+            return true;
+        }
+    }
+
+    if let Ok(value) = std::env::var("TERM") {
+        let value = value.to_lowercase();
+
+        if value.contains("truecolor") || value.contains("direct") {
+            return true;
+        }
+    }
+
+    if let Ok(value) = std::env::var("TERM_PROGRAM") {
+        let value = value.to_lowercase();
+
+        if matches!(
+            value.as_str(),
+            "iterm.app" | "wezterm" | "vscode" | "hyper" | "kitty" | "alacritty"
+        ) {
+            return true;
+        }
+    }
+
+    false
 }

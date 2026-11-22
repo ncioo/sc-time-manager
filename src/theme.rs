@@ -1,12 +1,73 @@
 use std::collections::HashSet;
 use std::fs;
 use std::path::{Path, PathBuf};
+use std::sync::atomic::{AtomicBool, Ordering};
 
 use ratatui::prelude::*;
 use serde::{Deserialize, Serialize};
 
 use crate::config::{parse_color, strip_bom};
 use crate::i18n::t;
+
+/// Поддерживает ли терминал 24-битный цвет. По умолчанию — да; main
+/// выключает его для терминалов вроде macOS Terminal.app, которые понимают
+/// только 256 цветов и ломаются на последовательностях `38;2;r;g;b`.
+static TRUE_COLOR: AtomicBool = AtomicBool::new(true);
+
+pub fn set_truecolor(enabled: bool) {
+    TRUE_COLOR.store(enabled, Ordering::Relaxed);
+}
+
+fn truecolor() -> bool {
+    TRUE_COLOR.load(Ordering::Relaxed)
+}
+
+/// Переводит RGB в ближайший цвет палитры xterm-256.
+pub fn fit_terminal_color(color: Color) -> Color {
+    if truecolor() {
+        return color;
+    }
+
+    match color {
+        Color::Rgb(red, green, blue) => Color::Indexed(nearest_ansi256(red, green, blue)),
+        other => other,
+    }
+}
+
+fn nearest_ansi256(red: u8, green: u8, blue: u8) -> u8 {
+    let mut best = 16;
+    let mut best_distance = i32::MAX;
+
+    for index in 16..=255u8 {
+        let (candidate_red, candidate_green, candidate_blue) = ansi256_rgb(index);
+        let dr = red as i32 - candidate_red as i32;
+        let dg = green as i32 - candidate_green as i32;
+        let db = blue as i32 - candidate_blue as i32;
+        let distance = dr * dr + dg * dg + db * db;
+
+        if distance < best_distance {
+            best = index;
+            best_distance = distance;
+        }
+    }
+
+    best
+}
+
+fn ansi256_rgb(index: u8) -> (u8, u8, u8) {
+    if index >= 232 {
+        let level = 8 + 10 * (index - 232);
+        return (level, level, level);
+    }
+
+    let cube = index - 16;
+    let levels = [0, 95, 135, 175, 215, 255];
+    let red = levels[(cube / 36) as usize];
+    let green = levels[((cube % 36) / 6) as usize];
+    let blue = levels[(cube % 6) as usize];
+
+    (red, green, blue)
+}
 
 /// Старое имя файла тем: нужно только для миграции в папку `themes`.
 pub const LEGACY_THEME_FILE: &str = "theme.json";
@@ -509,23 +570,28 @@ pub struct KeyBinding {
 
 impl Theme {
     pub fn from_colors(colors: &ThemeColors) -> Theme {
-        let background = parse_color(&colors.background, Color::Black);
-        let muted = parse_color(&colors.muted, Color::DarkGray);
+        let background = fit_terminal_color(parse_color(&colors.background, Color::Black));
+        let text = fit_terminal_color(parse_color(&colors.text, Color::White));
+        let muted = fit_terminal_color(parse_color(&colors.muted, Color::DarkGray));
+        let panel = fit_terminal_color(parse_color(&colors.panel, Color::Blue));
+        let panel_text = fit_terminal_color(parse_color(&colors.panel_text, Color::White));
+        let accent = fit_terminal_color(parse_color(&colors.accent, Color::Yellow));
+        let accent_text = fit_terminal_color(parse_color(&colors.accent_text, Color::Black));
+        let border = fit_terminal_color(parse_color(&colors.border, Color::DarkGray));
+        let error = fit_terminal_color(parse_color(&colors.error, Color::Red));
 
         Theme {
             background,
-            text: parse_color(&colors.text, Color::White),
+            text,
             muted,
-            panel: parse_color(&colors.panel, Color::Blue),
-            panel_text: parse_color(&colors.panel_text, Color::White),
-            accent: parse_color(&colors.accent, Color::Yellow),
-            accent_text: parse_color(&colors.accent_text, Color::Black),
-            border: parse_color(&colors.border, Color::DarkGray),
-            error: parse_color(&colors.error, Color::Red),
+            panel,
+            panel_text,
+            accent,
+            accent_text,
+            border,
+            error,
             key_binding: KeyBinding {
-                key: Style::new()
-                    .fg(parse_color(&colors.accent_text, Color::Black))
-                    .bg(parse_color(&colors.accent, Color::Yellow)),
+                key: Style::new().fg(accent_text).bg(accent),
                 description: Style::new().fg(muted).bg(background),
             },
         }
@@ -733,6 +799,14 @@ pub fn builtin_presets() -> Vec<ThemePreset> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn maps_rgb_to_nearest_xterm_color() {
+        assert_eq!(nearest_ansi256(0, 0, 0), 16);
+        assert_eq!(nearest_ansi256(255, 255, 255), 231);
+        assert_eq!(nearest_ansi256(255, 0, 0), 196);
+        assert_eq!(nearest_ansi256(128, 128, 128), 244);
+    }
 
     fn test_directory(name: &str) -> PathBuf {
         let directory = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
